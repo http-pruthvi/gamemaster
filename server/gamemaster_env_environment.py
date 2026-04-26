@@ -12,9 +12,8 @@ except (ImportError, ModuleNotFoundError):
 
 class GamemasterEnvironment(Environment):
     """
-    An Infinite Dungeon Gamemaster Environment.
-    The LLM plays the role of the Gamemaster. The environment simulates the player
-    and the rules engine over an infinite horizon.
+    An Advanced Infinite Dungeon Gamemaster Environment with Multi-Dimensional Rewards.
+    Tracks Rule Accuracy, Progression, and Narrative Consistency for RL training.
     """
 
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
@@ -31,6 +30,11 @@ class GamemasterEnvironment(Environment):
         self.monster_hp = 15
         self.dungeon_level = 1
         self.current_roll = random.randint(1, 20)
+        
+        # Multi-dimensional reward tracking
+        self.rule_accuracy_score = 0.0
+        self.progression_score = 0.0
+        self.narrative_score = 0.0
 
     def _generate_player_action(self):
         """A procedural player that reacts to the state."""
@@ -54,83 +58,87 @@ class GamemasterEnvironment(Environment):
             player_hp=self.player_hp,
             goblin_hp=self.monster_hp,
             inventory=self.inventory.copy(),
-            engine_feedback=f"Game started. Level {self.dungeon_level}. A {self.current_monster} appears.",
+            engine_feedback=f"Level {self.dungeon_level}: A {self.current_monster} appears.",
             done=False,
             reward=0.0,
         )
 
     def step(self, action: GamemasterAction) -> GamemasterObservation:
         self._state.step_count += 1
-        reward = 0.0
+        
+        # Reset turn rewards
+        turn_rule_reward = 0.0
+        turn_progression_reward = 0.0
+        turn_narrative_reward = 0.0
+        
         feedback = []
         done = False
         
         player_input = self._generate_player_action()
         
-        # 1. Evaluate Combat
+        # 1. Evaluate Rule Accuracy (Theme #2: Instruction Following)
         if "attack" in player_input.lower():
             if self.current_roll >= 10:
+                # HIT condition
                 if action.target_to_damage and action.target_to_damage.lower() == self.current_monster and action.damage_amount > 0:
-                    reward += 1.0
+                    turn_rule_reward = 1.0
                     self.monster_hp -= action.damage_amount
-                    feedback.append("Good: Applied damage correctly on a hit.")
+                    feedback.append("CORRECT: Hit applied.")
                 else:
-                    reward -= 1.0
-                    feedback.append(f"Error: Rolled a hit, but you didn't damage the {self.current_monster}.")
+                    turn_rule_reward = -1.0
+                    feedback.append(f"FAIL: Roll was {self.current_roll} (HIT), but no damage applied.")
             else:
+                # MISS condition
                 if action.damage_amount > 0:
-                    reward -= 1.0
-                    feedback.append("Error: Player rolled a miss, but you applied damage.")
+                    turn_rule_reward = -1.0
+                    feedback.append(f"FAIL: Roll was {self.current_roll} (MISS), but damage was applied.")
                 else:
-                    reward += 1.0
-                    feedback.append("Good: correctly handled a miss.")
+                    turn_rule_reward = 1.0
+                    feedback.append("CORRECT: Miss handled.")
                     
-        # 2. Evaluate Healing
-        elif "potion" in player_input.lower():
-            if "health potion" in self.inventory:
-                self.inventory.remove("health potion")
-                # Wait, the action model doesn't currently support player_heal_amount. 
-                # For simplicity, we just check if the GM narrates the healing.
-                # In a real expanded version, you'd add player_heal_amount to GamemasterAction.
-                self.player_hp = min(self.player_max_hp, self.player_hp + 10)
-                reward += 0.5
-                feedback.append("Player drank potion.")
-            else:
-                reward -= 1.0
-                feedback.append("Error: Player tried to drink a potion they don't have.")
-
-        # 3. Evaluate Exploration & Loot
+        # 2. Evaluate Progression (Theme #4: Self-Improvement)
         elif "search" in player_input.lower() or "move deeper" in player_input.lower():
             if self.monster_hp <= 0:
+                turn_progression_reward = 1.0
                 if action.item_to_give:
-                    reward += 1.0
                     self.inventory.append(action.item_to_give)
-                    feedback.append(f"Good: Gave loot ({action.item_to_give}).")
-                else:
-                    reward += 0.5 # Optional loot
                 
                 # Advance Level
                 self.dungeon_level += 1
                 monsters = ["orc", "skeleton", "troll", "dragon"]
                 self.current_monster = random.choice(monsters)
                 self.monster_hp = 10 + (self.dungeon_level * 5)
-                feedback.append(f"Advanced to level {self.dungeon_level}. New monster: {self.current_monster}.")
+                feedback.append(f"PROGRESS: Level {self.dungeon_level}!")
             else:
-                if action.item_to_give:
-                    reward -= 1.0
-                    feedback.append("Error: Monster is not dead, cannot loot or move forward safely.")
-                
-        # Simulate monster attacking player randomly
+                turn_progression_reward = -1.0
+                feedback.append("FAIL: Cannot advance while monster is alive.")
+
+        # 3. Evaluate Narrative Consistency (Theme #3: World Modeling)
+        # Check if narrative mentions the monster or player state
+        if action.narrative_response and len(action.narrative_response) > 10:
+            if self.current_monster.lower() in action.narrative_response.lower():
+                turn_narrative_reward += 0.5
+            if action.damage_amount > 0 and ("hit" in action.narrative_response.lower() or "damage" in action.narrative_response.lower()):
+                turn_narrative_reward += 0.5
+        
+        # Monster counter-attack
         if self.monster_hp > 0 and random.random() > 0.5:
             monster_dmg = random.randint(1, 3) + self.dungeon_level
             self.player_hp -= monster_dmg
-            feedback.append(f"Engine: {self.current_monster} dealt {monster_dmg} damage to player.")
+            feedback.append(f"{self.current_monster} counter-attacks for {monster_dmg} dmg!")
 
-        # Check death conditions
         if self.player_hp <= 0:
             done = True
-            feedback.append(f"Player died on level {self.dungeon_level}.")
+            feedback.append("GAME OVER: Player died.")
             
+        # Update totals
+        self.rule_accuracy_score += turn_rule_reward
+        self.progression_score += turn_progression_reward
+        self.narrative_score += turn_narrative_reward
+        
+        # Calculate final weighted reward for this turn
+        total_turn_reward = (turn_rule_reward * 0.6) + (turn_progression_reward * 0.2) + (turn_narrative_reward * 0.2)
+        
         next_player_input = self._generate_player_action()
         self.current_roll = random.randint(1, 20)
         
@@ -141,12 +149,19 @@ class GamemasterEnvironment(Environment):
             player_input=next_player_input,
             system_dice_roll=self.current_roll,
             player_hp=self.player_hp,
-            goblin_hp=self.monster_hp, # Re-using field for backward compatibility
+            goblin_hp=self.monster_hp,
             inventory=self.inventory.copy(),
-            engine_feedback=" | ".join(feedback) if feedback else "Action recorded.",
+            engine_feedback=" | ".join(feedback),
             done=done,
-            reward=reward,
-            metadata={"step": self._state.step_count, "level": self.dungeon_level}
+            reward=total_turn_reward,
+            metadata={
+                "step": self._state.step_count,
+                "level": self.dungeon_level,
+                "rule_accuracy": turn_rule_reward,
+                "progression": turn_progression_reward,
+                "narrative_quality": turn_narrative_reward,
+                "total_score": self.rule_accuracy_score + self.progression_score + self.narrative_score
+            }
         )
 
     @property
