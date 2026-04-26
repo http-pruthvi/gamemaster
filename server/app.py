@@ -16,31 +16,43 @@ api_app = create_app(
 
 # 2. Visual Dashboard UI
 def get_html_state(obs, env_level):
-    player_pct = (obs.player_hp / 20) * 100
+    party_html = ""
+    max_hps = {"Fighter": 20, "Rogue": 15, "Wizard": 10, "Cleric": 18}
+    for player, hp in obs.party_hp.items():
+        max_hp = max_hps[player]
+        pct = (hp / max_hp) * 100
+        color = "#00ff88" if hp > 0 else "#555"
+        party_html += f"""
+        <div style='margin-bottom: 5px;'>
+            <div style='display: flex; justify-content: space-between;'><span style='color: white; font-size: 0.9em;'>{player}</span> <span style='color: #aaa; font-size: 0.8em;'>{hp}/{max_hp}</span></div>
+            <div style='background: #333; height: 10px; border-radius: 3px;'><div style='background: {color}; width: {pct}%; height: 100%; border-radius: 3px;'></div></div>
+        </div>
+        """
+
     monster_max = 10 + (env_level * 5)
     monster_pct = (obs.monster_hp / monster_max) * 100
+    
     return f"""
     <div style='background: #0b0f19; padding: 20px; border-radius: 15px; color: white; font-family: sans-serif;'>
         <div style='display: flex; gap: 20px;'>
             <div style='flex: 1; border: 2px solid #00c8ff; padding: 15px; border-radius: 10px;'>
-                <h3 style='color: #00c8ff;'>🛡️ PLAYER HP: {obs.player_hp}/20</h3>
-                <div style='background: #333; height: 20px;'><div style='background: #00ff88; width: {player_pct}%; height: 100%;'></div></div>
-                <p style='color: #ffd700; margin-top: 10px;'>Inventory: {", ".join(obs.inventory) if obs.inventory else "Empty"}</p>
-                <p style='color: #aaa;'>Location: {obs.player_location}</p>
+                <h3 style='color: #00c8ff; margin-top: 0;'>🛡️ PARTY</h3>
+                {party_html}
+                <p style='color: #ffd700; margin-top: 10px; font-size: 0.9em;'>Inventory: {", ".join(obs.inventory) if obs.inventory else "Empty"}</p>
             </div>
             <div style='flex: 1; border: 2px solid #ff4444; padding: 15px; border-radius: 10px;'>
-                <h3 style='color: #ff4444;'>👹 {obs.monster_name.upper()} HP: {obs.monster_hp}/{monster_max}</h3>
-                <div style='background: #333; height: 20px;'><div style='background: #ff0000; width: {monster_pct}%; height: 100%;'></div></div>
-                <p style='color: #aaa; margin-top: 10px;'>Location: {obs.monster_location}</p>
+                <h3 style='color: #ff4444; margin-top: 0;'>👹 {obs.monster_name.upper()}</h3>
+                <div style='background: #333; height: 20px; border-radius: 5px;'><div style='background: #ff0000; width: {monster_pct}%; height: 100%; border-radius: 5px;'></div></div>
+                <p style='color: #aaa; font-size: 0.9em; margin-top: 5px;'>HP: {obs.monster_hp}/{monster_max}</p>
+                <p style='color: #ffaa00; margin-top: 15px;'>DUNGEON LEVEL: {env_level}</p>
             </div>
         </div>
-        <p style='text-align: center; color: #ffaa00; font-weight: bold;'>DUNGEON DEPTH: LEVEL {env_level}</p>
     </div>
     """
 
 with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui:
-    gr.Markdown("# 🎲 AI Gamemaster - Bleeding Edge Environment")
-    gr.Markdown("Test the latest mechanics: System 2 Reasoning, Spatial Memory, and Durable Recall.")
+    gr.Markdown("# 🎲 AI Gamemaster - Bleeding Edge Environment (4 Players)")
+    gr.Markdown("Test the latest mechanics: 4-Player Party Dynamics, System 2 Reasoning, and Durable Recall.")
     
     obs_state = gr.State()
     env_state = gr.State()
@@ -70,7 +82,7 @@ with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui
     def run_init():
         e = GamemasterEnvironment()
         o = e.reset()
-        return get_html_state(o, e.dungeon_level), f"Adventure Started! A {o.monster_name} appears.", o.player_input, o.system_dice_roll, e, o
+        return get_html_state(o, e.dungeon_level), f"Adventure Started! A {o.monster_name} appears.", f"[{o.active_player}]: {o.player_input}", o.system_dice_roll, e, o
 
     def run_turn(e, o, l, n, d, t, itm, nmn, nmh, nmd):
         a = GamemasterAction(
@@ -84,8 +96,8 @@ with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui
             next_monster_dmg=int(nmd) if nmd else None
         )
         o_new = e.step(a)
-        log_entry = f"GM Logic: {l}\nGM Narrative: {n}\nEngine Feedback: {o_new.engine_feedback}\n---\nPlayer: {o_new.player_input}"
-        return get_html_state(o_new, e.dungeon_level), log_entry, o_new.player_input, o_new.system_dice_roll, o_new
+        log_entry = f"GM Logic: {l}\nGM Narrative: {n}\nEngine Feedback: {o_new.engine_feedback}\n---\n[{o_new.active_player}]: {o_new.player_input}"
+        return get_html_state(o_new, e.dungeon_level), log_entry, f"[{o_new.active_player}]: {o_new.player_input}", o_new.system_dice_roll, o_new
 
     visual_ui.load(run_init, outputs=[status_html, game_log, player_in, roll_lab, env_state, obs_state])
     btn.click(run_turn, inputs=[env_state, obs_state, gm_log_in, narr, dmg_val, target_val, item_val, nm_name, nm_hp, nm_dmg], outputs=[status_html, game_log, player_in, roll_lab, obs_state])

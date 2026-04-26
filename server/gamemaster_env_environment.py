@@ -16,6 +16,11 @@ def jaccard_similarity(s1, s2):
     return len(set1.intersection(set2)) / len(set1.union(set2))
 
 class GamemasterEnvironment(Environment):
+    """
+    An Advanced Infinite Dungeon Gamemaster Environment.
+    Includes: 4-Player Party, System 2 Reasoning, Narrative Diversity, Pacing, and Durable Recall.
+    """
+
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
     def __init__(self):
@@ -23,8 +28,9 @@ class GamemasterEnvironment(Environment):
         self._reset_game_state()
 
     def _reset_game_state(self):
-        self.player_hp = 20
-        self.player_max_hp = 20
+        self.party_hp = {"Fighter": 20, "Rogue": 15, "Wizard": 10, "Cleric": 18}
+        self.party_max_hp = {"Fighter": 20, "Rogue": 15, "Wizard": 10, "Cleric": 18}
+        self.party_members = ["Fighter", "Rogue", "Wizard", "Cleric"]
         self.inventory = []
         self.current_monster = "goblin"
         self.monster_hp = 15
@@ -32,40 +38,33 @@ class GamemasterEnvironment(Environment):
         self.dungeon_level = 1
         self.current_roll = random.randint(1, 20)
         
-        self.player_loc = [0, 0]
-        self.monster_loc = [1, 2]
-        
         self.recent_narratives = []
         
         self.rule_accuracy_score = 0.0
         self.progression_score = 0.0
         self.narrative_score = 0.0
         self.pacing_score = 0.0
-        self.spatial_score = 0.0
 
-    def _generate_player_action(self):
-        if self.player_loc != self.monster_loc and self.monster_hp > 0:
-            if self.player_loc[1] < self.monster_loc[1]:
-                self.player_loc[1] += 1
-                return "I move North."
-            elif self.player_loc[1] > self.monster_loc[1]:
-                self.player_loc[1] -= 1
-                return "I move South."
-            elif self.player_loc[0] < self.monster_loc[0]:
-                self.player_loc[0] += 1
-                return "I move East."
-            else:
-                self.player_loc[0] -= 1
-                return "I move West."
-                
+    def _get_active_player(self):
+        alive_players = [p for p in self.party_members if self.party_hp[p] > 0]
+        if not alive_players:
+            return "None"
+        return alive_players[self._state.step_count % len(alive_players)]
+
+    def _generate_player_action(self, active_player):
         if self.monster_hp > 0:
-            return f"I attack the {self.current_monster} with my sword!"
+            if active_player == "Wizard":
+                return f"I cast Fireball at the {self.current_monster}!"
+            elif active_player == "Rogue":
+                return f"I sneak behind the {self.current_monster} and backstab it!"
+            elif active_player == "Cleric":
+                return f"I swing my mace at the {self.current_monster}!"
+            else:
+                return f"I attack the {self.current_monster} with my sword!"
         elif self.dungeon_level == 5 and "Rusty Key" not in self.inventory:
-            return "I try to open the Locked Iron Door, but it won't budge!"
+            return "I try to pick the lock on the Iron Door!"
         elif self.dungeon_level == 5 and "Rusty Key" in self.inventory:
             return "I use the Rusty Key to unlock the Iron Door!"
-        elif self.player_hp < 10 and "health potion" in self.inventory:
-            return "I drink my health potion."
         else:
             return "I search the room for loot and move deeper into the dungeon."
 
@@ -75,36 +74,36 @@ class GamemasterEnvironment(Environment):
         
         self.inventory.append("Rusty Key")
         
-        player_input = self._generate_player_action()
+        active_player = self._get_active_player()
+        player_input = self._generate_player_action(active_player)
         self.current_roll = random.randint(1, 20)
         
         return GamemasterObservation(
+            active_player=active_player,
             player_input=player_input,
             system_dice_roll=self.current_roll,
-            player_hp=self.player_hp,
+            party_hp=self.party_hp.copy(),
             monster_name=self.current_monster,
             monster_hp=self.monster_hp,
             inventory=self.inventory.copy(),
-            player_location=self.player_loc.copy(),
-            monster_location=self.monster_loc.copy(),
             engine_feedback=f"Level {self.dungeon_level}: A {self.current_monster} appears.",
             done=False,
             reward=0.0,
         )
 
     def step(self, action: GamemasterAction) -> GamemasterObservation:
+        active_player = self._get_active_player()
+        player_input = self._generate_player_action(active_player)
+        
         self._state.step_count += 1
         
         turn_rule_reward = 0.0
         turn_progression_reward = 0.0
         turn_narrative_reward = 0.0
         turn_pacing_reward = 0.0
-        turn_spatial_reward = 0.0
         
         feedback = []
         done = False
-        
-        player_input = self._generate_player_action()
         
         if action.gm_logic and len(action.gm_logic) > 10:
             turn_rule_reward += 0.5
@@ -112,41 +111,32 @@ class GamemasterEnvironment(Environment):
             turn_rule_reward -= 0.5
             feedback.append("FAIL: Missing Chain-of-Thought gm_logic.")
 
-        if "attack" in player_input.lower():
-            if self.player_loc != self.monster_loc:
-                turn_spatial_reward -= 1.0
-                feedback.append("SPATIAL ERROR: Player attacked but is not in the same location as the monster.")
+        if "attack" in player_input.lower() or "fireball" in player_input.lower() or "backstab" in player_input.lower() or "swing" in player_input.lower():
+            if self.current_roll >= 10:
+                if action.target_to_damage and action.target_to_damage.lower() == self.current_monster.lower() and action.damage_amount > 0:
+                    turn_rule_reward += 1.0
+                    self.monster_hp -= action.damage_amount
+                    feedback.append("CORRECT: Hit applied.")
+                else:
+                    turn_rule_reward -= 1.0
+                    feedback.append(f"FAIL: Roll was {self.current_roll} (HIT), but no damage applied.")
+            else:
                 if action.damage_amount > 0:
                     turn_rule_reward -= 1.0
-            else:
-                turn_spatial_reward += 1.0
-                if self.current_roll >= 10:
-                    if action.target_to_damage and action.target_to_damage.lower() == self.current_monster.lower() and action.damage_amount > 0:
-                        turn_rule_reward += 1.0
-                        self.monster_hp -= action.damage_amount
-                        feedback.append("CORRECT: Hit applied.")
-                    else:
-                        turn_rule_reward -= 1.0
-                        feedback.append(f"FAIL: Roll was {self.current_roll} (HIT), but no damage applied.")
+                    feedback.append(f"FAIL: Roll was {self.current_roll} (MISS), but damage was applied.")
                 else:
-                    if action.damage_amount > 0:
-                        turn_rule_reward -= 1.0
-                        feedback.append(f"FAIL: Roll was {self.current_roll} (MISS), but damage was applied.")
-                    else:
-                        turn_rule_reward += 1.0
-                        feedback.append("CORRECT: Miss handled.")
+                    turn_rule_reward += 1.0
+                    feedback.append("CORRECT: Miss handled.")
 
-        elif "move" in player_input.lower():
-            pass 
-            
-        elif "unlock" in player_input.lower() and "Rusty Key" in self.inventory:
-            if "escape" in action.narrative_response.lower() or "unlock" in action.narrative_response.lower() or "open" in action.narrative_response.lower():
-                turn_progression_reward += 5.0
-                feedback.append("EPIC SUCCESS: AI Remembered the Rusty Key from Level 1!")
-                done = True
-            else:
-                turn_progression_reward -= 2.0
-                feedback.append("FAIL: AI forgot the player has the Rusty Key and can escape.")
+        elif "pick" in player_input.lower() or "unlock" in player_input.lower():
+            if "Rusty Key" in self.inventory:
+                if "escape" in action.narrative_response.lower() or "unlock" in action.narrative_response.lower() or "open" in action.narrative_response.lower():
+                    turn_progression_reward += 5.0
+                    feedback.append("EPIC SUCCESS: AI Remembered the Rusty Key from Level 1!")
+                    done = True
+                else:
+                    turn_progression_reward -= 2.0
+                    feedback.append("FAIL: AI forgot the party has the Rusty Key and can escape.")
 
         elif "search" in player_input.lower() or "move deeper" in player_input.lower():
             if self.monster_hp <= 0:
@@ -167,9 +157,6 @@ class GamemasterEnvironment(Environment):
                     self.monster_hp = 10 + (self.dungeon_level * 5)
                     self.monster_dmg = 2 + self.dungeon_level
                     feedback.append(f"PROGRESS: Level {self.dungeon_level} (Default monster used).")
-                    
-                self.player_loc = [0, 0]
-                self.monster_loc = [random.randint(0,2), random.randint(1,3)]
             else:
                 turn_progression_reward -= 1.0
                 feedback.append("FAIL: Cannot advance while monster is alive.")
@@ -185,44 +172,51 @@ class GamemasterEnvironment(Environment):
             if len(self.recent_narratives) > 5:
                 self.recent_narratives.pop(0)
 
-        hp_pct = self.player_hp / self.player_max_hp
-        if 0.1 <= hp_pct <= 0.3:
-            turn_pacing_reward += 1.0  
-        elif hp_pct < 0.1:
-            turn_pacing_reward -= 0.5  
-        else:
-            turn_pacing_reward += 0.1  
+        alive_hp = sum([hp for hp in self.party_hp.values() if hp > 0])
+        max_alive_hp = sum([self.party_max_hp[p] for p in self.party_members if self.party_hp[p] > 0])
+        if max_alive_hp > 0:
+            hp_pct = alive_hp / max_alive_hp
+            if 0.1 <= hp_pct <= 0.4:
+                turn_pacing_reward += 1.0  
+            elif hp_pct < 0.1:
+                turn_pacing_reward -= 0.5  
+            else:
+                turn_pacing_reward += 0.1  
             
-        if self.monster_hp > 0 and self.player_loc == self.monster_loc and random.random() > 0.5:
-            self.player_hp -= self.monster_dmg
-            feedback.append(f"{self.current_monster} counter-attacks for {self.monster_dmg} dmg!")
+        if self.monster_hp > 0 and random.random() > 0.4:
+            alive_players = [p for p in self.party_members if self.party_hp[p] > 0]
+            if alive_players:
+                target_player = random.choice(alive_players)
+                self.party_hp[target_player] -= self.monster_dmg
+                feedback.append(f"{self.current_monster} attacks {target_player} for {self.monster_dmg} dmg!")
 
-        if self.player_hp <= 0:
+        alive_players_after = [p for p in self.party_members if self.party_hp[p] > 0]
+        if not alive_players_after:
             done = True
-            feedback.append("GAME OVER: Player died.")
+            feedback.append("GAME OVER: Entire party died.")
             
         self.rule_accuracy_score += turn_rule_reward
         self.progression_score += turn_progression_reward
         self.narrative_score += turn_narrative_reward
         self.pacing_score += turn_pacing_reward
-        self.spatial_score += turn_spatial_reward
         
-        total_turn_reward = (turn_rule_reward * 0.3) + (turn_progression_reward * 0.2) + (turn_narrative_reward * 0.15) + (turn_pacing_reward * 0.15) + (turn_spatial_reward * 0.2)
+        total_turn_reward = (turn_rule_reward * 0.4) + (turn_progression_reward * 0.3) + (turn_narrative_reward * 0.15) + (turn_pacing_reward * 0.15)
         
-        next_player_input = self._generate_player_action()
+        next_active_player = self._get_active_player()
+        next_player_input = self._generate_player_action(next_active_player)
         self.current_roll = random.randint(1, 20)
         self.monster_hp = max(0, self.monster_hp)
-        self.player_hp = max(0, self.player_hp)
+        for p in self.party_members:
+            self.party_hp[p] = max(0, self.party_hp[p])
 
         return GamemasterObservation(
+            active_player=next_active_player,
             player_input=next_player_input,
             system_dice_roll=self.current_roll,
-            player_hp=self.player_hp,
+            party_hp=self.party_hp.copy(),
             monster_name=self.current_monster,
             monster_hp=self.monster_hp,
             inventory=self.inventory.copy(),
-            player_location=self.player_loc.copy(),
-            monster_location=self.monster_loc.copy(),
             engine_feedback=" | ".join(feedback),
             done=done,
             reward=total_turn_reward,
@@ -233,8 +227,7 @@ class GamemasterEnvironment(Environment):
                 "progression": turn_progression_reward,
                 "narrative_quality": turn_narrative_reward,
                 "pacing": turn_pacing_reward,
-                "spatial": turn_spatial_reward,
-                "total_score": self.rule_accuracy_score + self.progression_score + self.narrative_score + self.pacing_score + self.spatial_score
+                "total_score": self.rule_accuracy_score + self.progression_score + self.narrative_score + self.pacing_score
             }
         )
 
