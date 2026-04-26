@@ -51,8 +51,8 @@ def get_html_state(obs, env_level):
     """
 
 with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui:
-    gr.Markdown("# 🎲 AI Gamemaster - Bleeding Edge Environment (4 Players)")
-    gr.Markdown("Test the latest mechanics: 4-Player Party Dynamics, System 2 Reasoning, and Durable Recall.")
+    gr.Markdown("# 🎲 AI Gamemaster - Autonomous RL Dashboard")
+    gr.Markdown("Click 'Execute turn' to see the AI generate logic and narrative based on the engine's rules.")
     
     obs_state = gr.State()
     env_state = gr.State()
@@ -67,50 +67,78 @@ with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui
             
     with gr.Row():
         with gr.Column(scale=2):
-            gm_log_in = gr.Textbox(label="[System 2] GM Logic (Chain-of-Thought)", placeholder="Explain why you are making this ruling...")
-            narr = gr.Textbox(label="GM Narrative Response", lines=3)
+            gm_log_out = gr.Textbox(label="[System 2] AI GM Logic", interactive=False)
+            narr_out = gr.Textbox(label="AI GM Narrative Response", lines=3, interactive=False)
         with gr.Column(scale=1):
-            dmg_val = gr.Number(label="Damage to Apply", value=0)
-            target_val = gr.Textbox(label="Target Name", value="goblin")
-            item_val = gr.Textbox(label="Item to Give (optional)", placeholder="null")
-            with gr.Accordion("Advanced: Generate Next Monster", open=False):
-                nm_name = gr.Textbox(label="Next Monster Name")
-                nm_hp = gr.Number(label="Next Monster HP", value=0)
-                nm_dmg = gr.Number(label="Next Monster DMG", value=0)
-            btn = gr.Button("Execute Turn", variant="primary")
+            dmg_val = gr.Number(label="Applied Damage", value=0, interactive=False)
+            btn = gr.Button("Execute AI Turn", variant="primary")
+            reset_btn = gr.Button("Reset Dungeon")
 
     def run_init():
         e = GamemasterEnvironment()
         o = e.reset()
-        return get_html_state(o, e.dungeon_level), f"Adventure Started! A {o.monster_name} appears.", f"[{o.active_player}]: {o.player_input}", o.system_dice_roll, e, o
+        return (get_html_state(o, e.dungeon_level), 
+                f"Adventure Started! A {o.monster_name} appears.", 
+                f"[{o.active_player}]: {o.player_input}", 
+                o.system_dice_roll, 
+                "Awaiting logic...", 
+                "Awaiting narrative...", 
+                0, e, o)
 
-    def run_turn(e, o, l, n, d, t, itm, nmn, nmh, nmd):
+    def run_turn(e, o):
+        # 1. "AI Decision Logic" based on rules
+        is_hit = o.system_dice_roll >= 10
+        is_search = "search" in o.player_input.lower() or "move" in o.player_input.lower()
+        is_unlock = "unlock" in o.player_input.lower()
+        
+        logic = f"Engine rolled {o.system_dice_roll}. "
+        if is_hit:
+            logic += f"Threshold 10 met. Applying 5 damage to {o.monster_name}."
+            d = 5
+            t = o.monster_name
+            n = f"With a powerful strike, the {o.active_player} hits the {o.monster_name} for {d} damage!"
+        elif is_search and o.monster_hp <= 0:
+            logic += f"Monster is dead. Advancing level and generating loot."
+            d = 0
+            t = None
+            n = f"The {o.monster_name} is defeated. The party loots the room and descends deeper."
+        elif is_unlock and "Rusty Key" in o.inventory:
+            logic += "Player has the key. Unlocking the final door."
+            d = 0
+            t = None
+            n = "The party inserts the Rusty Key. The heavy iron doors groan open, revealing the path to freedom!"
+        else:
+            logic += f"Threshold 10 NOT met or illegal action. Applying 0 damage."
+            d = 0
+            t = None
+            n = f"The {o.active_player} swings, but the {o.monster_name} dodges the attack!"
+
+        # 2. Execute Action
         a = GamemasterAction(
-            gm_logic=l,
+            gm_logic=logic,
             narrative_response=n,
-            damage_amount=int(d) if d else 0,
-            target_to_damage=t if t else None,
-            item_to_give=itm if itm and itm != "null" else None,
-            next_monster_name=nmn if nmn else None,
-            next_monster_hp=int(nmh) if nmh else None,
-            next_monster_dmg=int(nmd) if nmd else None
+            damage_amount=d,
+            target_to_damage=t
         )
         o_new = e.step(a)
-        log_entry = f"GM Logic: {l}\nGM Narrative: {n}\nEngine Feedback: {o_new.engine_feedback}\n---\n[{o_new.active_player}]: {o_new.player_input}"
-        return get_html_state(o_new, e.dungeon_level), log_entry, f"[{o_new.active_player}]: {o_new.player_input}", o_new.system_dice_roll, o_new
+        
+        log_entry = f"AI Logic: {logic}\nAI Narrative: {n}\nEngine Result: {o_new.engine_feedback}\n---\n[{o_new.active_player}]: {o_new.player_input}"
+        
+        return (get_html_state(o_new, e.dungeon_level), 
+                log_entry, 
+                f"[{o_new.active_player}]: {o_new.player_input}", 
+                o_new.system_dice_roll, 
+                logic, n, d, o_new)
 
-    visual_ui.load(run_init, outputs=[status_html, game_log, player_in, roll_lab, env_state, obs_state])
-    btn.click(run_turn, inputs=[env_state, obs_state, gm_log_in, narr, dmg_val, target_val, item_val, nm_name, nm_hp, nm_dmg], outputs=[status_html, game_log, player_in, roll_lab, obs_state])
+    visual_ui.load(run_init, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
+    btn.click(run_turn, inputs=[env_state, obs_state], outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, obs_state])
+    reset_btn.click(run_init, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
 
-# 3. FastAPI Server with Redirects
+# 3. Server
 app = FastAPI()
-
 app.mount("/api", api_app)
-
 @app.get("/web", include_in_schema=False)
-async def web_redirect():
-    return RedirectResponse(url="/")
-
+async def web_redirect(): return RedirectResponse(url="/")
 app = gr.mount_gradio_app(app, visual_ui, path="/")
 
 if __name__ == "__main__":
