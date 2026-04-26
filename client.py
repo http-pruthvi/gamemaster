@@ -10,32 +10,29 @@ from .models import GamemasterAction, GamemasterObservation
 class GamemasterEnv(
     EnvClient[GamemasterAction, GamemasterObservation, State]
 ):
-    """
-    Client for the Gamemaster Env Environment.
-    """
-
     def _step_payload(self, action: GamemasterAction) -> Dict:
-        """
-        Convert GamemasterAction to JSON payload for step message.
-        """
         return {
+            "gm_logic": action.gm_logic,
             "narrative_response": action.narrative_response,
             "target_to_damage": action.target_to_damage,
             "damage_amount": action.damage_amount,
             "item_to_give": action.item_to_give,
+            "next_monster_name": action.next_monster_name,
+            "next_monster_hp": action.next_monster_hp,
+            "next_monster_dmg": action.next_monster_dmg,
         }
 
     def _parse_result(self, payload: Dict) -> StepResult[GamemasterObservation]:
-        """
-        Parse server response into StepResult[GamemasterObservation].
-        """
         obs_data = payload.get("observation", {})
         observation = GamemasterObservation(
             player_input=obs_data.get("player_input", ""),
             system_dice_roll=obs_data.get("system_dice_roll", 0),
             player_hp=obs_data.get("player_hp", 0),
-            goblin_hp=obs_data.get("goblin_hp", 0),
+            monster_name=obs_data.get("monster_name", "goblin"),
+            monster_hp=obs_data.get("monster_hp", 0),
             inventory=obs_data.get("inventory", []),
+            player_location=obs_data.get("player_location", [0,0]),
+            monster_location=obs_data.get("monster_location", [0,0]),
             engine_feedback=obs_data.get("engine_feedback", ""),
             done=payload.get("done", False),
             reward=payload.get("reward", 0.0),
@@ -49,9 +46,6 @@ class GamemasterEnv(
         )
 
     def _parse_state(self, payload: Dict) -> State:
-        """
-        Parse server response into State object.
-        """
         return State(
             episode_id=payload.get("episode_id", ""),
             step_count=payload.get("step_count", 0),

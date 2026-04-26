@@ -9,13 +9,13 @@ try:
 except (ImportError, ModuleNotFoundError):
     from models import GamemasterAction, GamemasterObservation
 
+def jaccard_similarity(s1, s2):
+    set1 = set(s1.lower().split())
+    set2 = set(s2.lower().split())
+    if not set1 or not set2: return 0.0
+    return len(set1.intersection(set2)) / len(set1.union(set2))
 
 class GamemasterEnvironment(Environment):
-    """
-    An Advanced Infinite Dungeon Gamemaster Environment with Multi-Dimensional Rewards.
-    Tracks Rule Accuracy, Progression, and Narrative Consistency for RL training.
-    """
-
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
     def __init__(self):
@@ -28,18 +28,42 @@ class GamemasterEnvironment(Environment):
         self.inventory = []
         self.current_monster = "goblin"
         self.monster_hp = 15
+        self.monster_dmg = 2
         self.dungeon_level = 1
         self.current_roll = random.randint(1, 20)
         
-        # Multi-dimensional reward tracking
+        self.player_loc = [0, 0]
+        self.monster_loc = [1, 2]
+        
+        self.recent_narratives = []
+        
         self.rule_accuracy_score = 0.0
         self.progression_score = 0.0
         self.narrative_score = 0.0
+        self.pacing_score = 0.0
+        self.spatial_score = 0.0
 
     def _generate_player_action(self):
-        """A procedural player that reacts to the state."""
+        if self.player_loc != self.monster_loc and self.monster_hp > 0:
+            if self.player_loc[1] < self.monster_loc[1]:
+                self.player_loc[1] += 1
+                return "I move North."
+            elif self.player_loc[1] > self.monster_loc[1]:
+                self.player_loc[1] -= 1
+                return "I move South."
+            elif self.player_loc[0] < self.monster_loc[0]:
+                self.player_loc[0] += 1
+                return "I move East."
+            else:
+                self.player_loc[0] -= 1
+                return "I move West."
+                
         if self.monster_hp > 0:
             return f"I attack the {self.current_monster} with my sword!"
+        elif self.dungeon_level == 5 and "Rusty Key" not in self.inventory:
+            return "I try to open the Locked Iron Door, but it won't budge!"
+        elif self.dungeon_level == 5 and "Rusty Key" in self.inventory:
+            return "I use the Rusty Key to unlock the Iron Door!"
         elif self.player_hp < 10 and "health potion" in self.inventory:
             return "I drink my health potion."
         else:
@@ -49,6 +73,8 @@ class GamemasterEnvironment(Environment):
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._reset_game_state()
         
+        self.inventory.append("Rusty Key")
+        
         player_input = self._generate_player_action()
         self.current_roll = random.randint(1, 20)
         
@@ -56,8 +82,11 @@ class GamemasterEnvironment(Environment):
             player_input=player_input,
             system_dice_roll=self.current_roll,
             player_hp=self.player_hp,
-            goblin_hp=self.monster_hp,
+            monster_name=self.current_monster,
+            monster_hp=self.monster_hp,
             inventory=self.inventory.copy(),
+            player_location=self.player_loc.copy(),
+            monster_location=self.monster_loc.copy(),
             engine_feedback=f"Level {self.dungeon_level}: A {self.current_monster} appears.",
             done=False,
             reward=0.0,
@@ -66,82 +95,122 @@ class GamemasterEnvironment(Environment):
     def step(self, action: GamemasterAction) -> GamemasterObservation:
         self._state.step_count += 1
         
-        # Reset turn rewards
         turn_rule_reward = 0.0
         turn_progression_reward = 0.0
         turn_narrative_reward = 0.0
+        turn_pacing_reward = 0.0
+        turn_spatial_reward = 0.0
         
         feedback = []
         done = False
         
         player_input = self._generate_player_action()
         
-        # 1. Evaluate Rule Accuracy (Theme #2: Instruction Following)
+        if action.gm_logic and len(action.gm_logic) > 10:
+            turn_rule_reward += 0.5
+        else:
+            turn_rule_reward -= 0.5
+            feedback.append("FAIL: Missing Chain-of-Thought gm_logic.")
+
         if "attack" in player_input.lower():
-            if self.current_roll >= 10:
-                # HIT condition
-                if action.target_to_damage and action.target_to_damage.lower() == self.current_monster and action.damage_amount > 0:
-                    turn_rule_reward = 1.0
-                    self.monster_hp -= action.damage_amount
-                    feedback.append("CORRECT: Hit applied.")
-                else:
-                    turn_rule_reward = -1.0
-                    feedback.append(f"FAIL: Roll was {self.current_roll} (HIT), but no damage applied.")
-            else:
-                # MISS condition
+            if self.player_loc != self.monster_loc:
+                turn_spatial_reward -= 1.0
+                feedback.append("SPATIAL ERROR: Player attacked but is not in the same location as the monster.")
                 if action.damage_amount > 0:
-                    turn_rule_reward = -1.0
-                    feedback.append(f"FAIL: Roll was {self.current_roll} (MISS), but damage was applied.")
+                    turn_rule_reward -= 1.0
+            else:
+                turn_spatial_reward += 1.0
+                if self.current_roll >= 10:
+                    if action.target_to_damage and action.target_to_damage.lower() == self.current_monster.lower() and action.damage_amount > 0:
+                        turn_rule_reward += 1.0
+                        self.monster_hp -= action.damage_amount
+                        feedback.append("CORRECT: Hit applied.")
+                    else:
+                        turn_rule_reward -= 1.0
+                        feedback.append(f"FAIL: Roll was {self.current_roll} (HIT), but no damage applied.")
                 else:
-                    turn_rule_reward = 1.0
-                    feedback.append("CORRECT: Miss handled.")
-                    
-        # 2. Evaluate Progression (Theme #4: Self-Improvement)
+                    if action.damage_amount > 0:
+                        turn_rule_reward -= 1.0
+                        feedback.append(f"FAIL: Roll was {self.current_roll} (MISS), but damage was applied.")
+                    else:
+                        turn_rule_reward += 1.0
+                        feedback.append("CORRECT: Miss handled.")
+
+        elif "move" in player_input.lower():
+            pass 
+            
+        elif "unlock" in player_input.lower() and "Rusty Key" in self.inventory:
+            if "escape" in action.narrative_response.lower() or "unlock" in action.narrative_response.lower() or "open" in action.narrative_response.lower():
+                turn_progression_reward += 5.0
+                feedback.append("EPIC SUCCESS: AI Remembered the Rusty Key from Level 1!")
+                done = True
+            else:
+                turn_progression_reward -= 2.0
+                feedback.append("FAIL: AI forgot the player has the Rusty Key and can escape.")
+
         elif "search" in player_input.lower() or "move deeper" in player_input.lower():
             if self.monster_hp <= 0:
-                turn_progression_reward = 1.0
+                turn_progression_reward += 1.0
                 if action.item_to_give:
                     self.inventory.append(action.item_to_give)
                 
-                # Advance Level
                 self.dungeon_level += 1
-                monsters = ["orc", "skeleton", "troll", "dragon"]
-                self.current_monster = random.choice(monsters)
-                self.monster_hp = 10 + (self.dungeon_level * 5)
-                feedback.append(f"PROGRESS: Level {self.dungeon_level}!")
+                
+                if action.next_monster_name and action.next_monster_hp and action.next_monster_dmg:
+                    self.current_monster = action.next_monster_name
+                    self.monster_hp = action.next_monster_hp
+                    self.monster_dmg = action.next_monster_dmg
+                    turn_progression_reward += 1.0
+                    feedback.append(f"PROGRESS: AI Generated Level {self.dungeon_level} -> {self.current_monster}!")
+                else:
+                    self.current_monster = random.choice(["orc", "skeleton", "troll"])
+                    self.monster_hp = 10 + (self.dungeon_level * 5)
+                    self.monster_dmg = 2 + self.dungeon_level
+                    feedback.append(f"PROGRESS: Level {self.dungeon_level} (Default monster used).")
+                    
+                self.player_loc = [0, 0]
+                self.monster_loc = [random.randint(0,2), random.randint(1,3)]
             else:
-                turn_progression_reward = -1.0
+                turn_progression_reward -= 1.0
                 feedback.append("FAIL: Cannot advance while monster is alive.")
 
-        # 3. Evaluate Narrative Consistency (Theme #3: World Modeling)
-        # Check if narrative mentions the monster or player state
-        if action.narrative_response and len(action.narrative_response) > 10:
-            if self.current_monster.lower() in action.narrative_response.lower():
+        if action.narrative_response:
+            max_sim = max([jaccard_similarity(action.narrative_response, r) for r in self.recent_narratives] + [0])
+            if max_sim > 0.7:
+                turn_narrative_reward -= 0.5
+                feedback.append("NARRATIVE PENALTY: Response too repetitive.")
+            else:
                 turn_narrative_reward += 0.5
-            if action.damage_amount > 0 and ("hit" in action.narrative_response.lower() or "damage" in action.narrative_response.lower()):
-                turn_narrative_reward += 0.5
-        
-        # Monster counter-attack
-        if self.monster_hp > 0 and random.random() > 0.5:
-            monster_dmg = random.randint(1, 3) + self.dungeon_level
-            self.player_hp -= monster_dmg
-            feedback.append(f"{self.current_monster} counter-attacks for {monster_dmg} dmg!")
+            self.recent_narratives.append(action.narrative_response)
+            if len(self.recent_narratives) > 5:
+                self.recent_narratives.pop(0)
+
+        hp_pct = self.player_hp / self.player_max_hp
+        if 0.1 <= hp_pct <= 0.3:
+            turn_pacing_reward += 1.0  
+        elif hp_pct < 0.1:
+            turn_pacing_reward -= 0.5  
+        else:
+            turn_pacing_reward += 0.1  
+            
+        if self.monster_hp > 0 and self.player_loc == self.monster_loc and random.random() > 0.5:
+            self.player_hp -= self.monster_dmg
+            feedback.append(f"{self.current_monster} counter-attacks for {self.monster_dmg} dmg!")
 
         if self.player_hp <= 0:
             done = True
             feedback.append("GAME OVER: Player died.")
             
-        # Update totals
         self.rule_accuracy_score += turn_rule_reward
         self.progression_score += turn_progression_reward
         self.narrative_score += turn_narrative_reward
+        self.pacing_score += turn_pacing_reward
+        self.spatial_score += turn_spatial_reward
         
-        # Calculate final weighted reward for this turn
-        total_turn_reward = (turn_rule_reward * 0.6) + (turn_progression_reward * 0.2) + (turn_narrative_reward * 0.2)
+        total_turn_reward = (turn_rule_reward * 0.3) + (turn_progression_reward * 0.2) + (turn_narrative_reward * 0.15) + (turn_pacing_reward * 0.15) + (turn_spatial_reward * 0.2)
         
         next_player_input = self._generate_player_action()
         self.current_roll = random.randint(1, 20)
-        
         self.monster_hp = max(0, self.monster_hp)
         self.player_hp = max(0, self.player_hp)
 
@@ -149,8 +218,11 @@ class GamemasterEnvironment(Environment):
             player_input=next_player_input,
             system_dice_roll=self.current_roll,
             player_hp=self.player_hp,
-            goblin_hp=self.monster_hp,
+            monster_name=self.current_monster,
+            monster_hp=self.monster_hp,
             inventory=self.inventory.copy(),
+            player_location=self.player_loc.copy(),
+            monster_location=self.monster_loc.copy(),
             engine_feedback=" | ".join(feedback),
             done=done,
             reward=total_turn_reward,
@@ -160,7 +232,9 @@ class GamemasterEnvironment(Environment):
                 "rule_accuracy": turn_rule_reward,
                 "progression": turn_progression_reward,
                 "narrative_quality": turn_narrative_reward,
-                "total_score": self.rule_accuracy_score + self.progression_score + self.narrative_score
+                "pacing": turn_pacing_reward,
+                "spatial": turn_spatial_reward,
+                "total_score": self.rule_accuracy_score + self.progression_score + self.narrative_score + self.pacing_score + self.spatial_score
             }
         )
 
