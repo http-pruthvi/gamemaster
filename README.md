@@ -61,6 +61,28 @@ To succeed, the AI Gamemaster must adhere to these strict environmental constrai
 
 ---
 
+## 🧠 How the AI Learns: The GRPO Self-Improvement Loop
+The core of this project is the **self-improving agent system**. Here is the technical breakdown of how the AI "teaches itself" to be a better Gamemaster:
+
+### 1. Group Relative Policy Optimization (GRPO)
+Unlike standard RL that needs a complex "Critic" model, we use **GRPO**. For every turn in the dungeon, the AI generates a **group of 8 completions**. 
+- Some completions are creative but ignore the dice.
+- Some completions follow the rules but have poor narrative.
+- Some completions do both perfectly.
+
+The system compares these 8 attempts **relatively**. It calculates which ones received the highest reward from the OpenEnv engine and adjusts the model's internal policy to favor those winning patterns.
+
+### 2. The "Aha!" Moment (Curriculum Learning)
+As the AI improves, the simulated player survives longer. 
+- **Early Training:** The AI fails to damage the monster; the player dies on Level 1. The AI only learns "basic combat rules."
+- **Late Training:** The AI becomes accurate; the player reaches Level 5+. Now, the AI has to learn "progression rules" and "scaling monster HP."
+- This creates an **adaptive curriculum** where the environment naturally gets harder as the AI gets smarter.
+
+### 3. Subordinating Narrative to Truth
+Through thousands of iterations, the AI undergoes a cognitive shift. It learns that its primary job is **State Management**. It realizes that a "Heroic Strike" in the story is only valid if the `system_dice_roll` is >= 10. This transition from "unconstrained writer" to "rule-abiding agent" is the essence of World Modeling.
+
+---
+
 ## 🛠️ How to Play Visually
 Visit the **[Visual Dashboard](https://huggingface.co/spaces/Pruthvi1762/gamemaster_env)**.
 The homepage now renders a **Gradio Interactive UI** where you can manually test the engine.
