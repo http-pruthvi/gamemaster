@@ -26,6 +26,8 @@ YOU MUST RESPOND ONLY WITH A VALID JSON OBJECT:
 """
 
 def run_ollama_game():
+    # Update URL to match the new API mount point
+    env_url = "http://localhost:7860/api"
     env = GamemasterEnvironment()
     obs = env.reset()
     
