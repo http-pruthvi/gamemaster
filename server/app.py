@@ -2,8 +2,18 @@ import gradio as gr
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from openenv.core.env_server.http_server import create_app
-from server.gamemaster_env_environment import GamemasterEnvironment
-from models import GamemasterAction, GamemasterObservation
+
+# ROBUST IMPORTS FOR DOCKER
+try:
+    from .gamemaster_env_environment import GamemasterEnvironment
+    from ..models import GamemasterAction, GamemasterObservation
+except (ImportError, ModuleNotFoundError):
+    try:
+        from server.gamemaster_env_environment import GamemasterEnvironment
+        from models import GamemasterAction, GamemasterObservation
+    except (ImportError, ModuleNotFoundError):
+        from gamemaster_env_environment import GamemasterEnvironment
+        from models import GamemasterAction, GamemasterObservation
 
 # 1. OpenEnv API (available at /api)
 api_app = create_app(
@@ -133,7 +143,7 @@ with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui
                 o_new.system_dice_roll, 
                 logic, n, d, o_new)
 
-    visual_ui.load(init_ui, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
+    visual_ui.load(run_init, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
     btn.click(run_turn, inputs=[env_state, obs_state], outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, obs_state])
     reset_btn.click(run_init, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
 
