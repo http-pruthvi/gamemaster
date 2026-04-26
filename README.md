@@ -56,6 +56,8 @@ Through **GRPO (Group Relative Policy Optimization)** via Unsloth, the agent und
 Through interaction with the `GamemasterEnv`, the model demonstrated a clear "Self-Improvement" trajectory. 
 
 ### 1. Rule Accuracy (The "Reasoning" Curve)
+![Self-Improvement Reward Curve](./reward_curve.png)
+
 Initial training logs show the model's reward increasing as it learns to prioritize the `system_dice_roll` over its own narrative hallucinations. 
 - **Step 1-50:** Model generates high-quality text but ignores dice rolls. Reward: `-1.2`.
 - **Step 50-150:** Model starts to include JSON but targets the wrong monster. Reward: `+0.2`.
