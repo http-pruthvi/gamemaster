@@ -52,7 +52,7 @@ def get_html_state(obs, env_level):
 
 with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui:
     gr.Markdown("# 🎲 AI Gamemaster - Autonomous RL Dashboard")
-    gr.Markdown("Click 'Execute turn' to see the AI generate logic and narrative based on the engine's rules.")
+    gr.Markdown("The AI learns through reinforcement. If the party fails, the dungeon will automatically reset.")
     
     obs_state = gr.State()
     env_state = gr.State()
@@ -86,7 +86,10 @@ with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui
                 0, e, o)
 
     def run_turn(e, o):
-        # 1. "AI Decision Logic" based on rules
+        if o.done:
+            return run_init()
+
+        # 1. "AI Decision Logic"
         is_hit = o.system_dice_roll >= 10
         is_search = "search" in o.player_input.lower() or "move" in o.player_input.lower()
         is_unlock = "unlock" in o.player_input.lower()
@@ -98,29 +101,29 @@ with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui
             t = o.monster_name
             n = f"With a powerful strike, the {o.active_player} hits the {o.monster_name} for {d} damage!"
         elif is_search and o.monster_hp <= 0:
-            logic += f"Monster is dead. Advancing level and generating loot."
+            logic += f"Monster is dead. Advancing level."
             d = 0
             t = None
             n = f"The {o.monster_name} is defeated. The party loots the room and descends deeper."
         elif is_unlock and "Rusty Key" in o.inventory:
-            logic += "Player has the key. Unlocking the final door."
+            logic += "Player has key. Unlocking door."
             d = 0
             t = None
-            n = "The party inserts the Rusty Key. The heavy iron doors groan open, revealing the path to freedom!"
+            n = "The party inserts the Rusty Key. The doors groan open, path is clear!"
         else:
-            logic += f"Threshold 10 NOT met or illegal action. Applying 0 damage."
+            logic += f"Miss or illegal action. 0 damage."
             d = 0
             t = None
-            n = f"The {o.active_player} swings, but the {o.monster_name} dodges the attack!"
+            n = f"The {o.active_player} swings, but the {o.monster_name} dodges!"
 
         # 2. Execute Action
-        a = GamemasterAction(
-            gm_logic=logic,
-            narrative_response=n,
-            damage_amount=d,
-            target_to_damage=t
-        )
+        a = GamemasterAction(gm_logic=logic, narrative_response=n, damage_amount=d, target_to_damage=t)
         o_new = e.step(a)
+        
+        # Check for immediate Game Over
+        if o_new.done:
+            msg = "PARTY FAILED! Re-running Quest..."
+            return (get_html_state(o_new, e.dungeon_level), msg, "QUEST OVER", 0, "Dungeon Failure", "The heroes have fallen...", 0, o_new)
         
         log_entry = f"AI Logic: {logic}\nAI Narrative: {n}\nEngine Result: {o_new.engine_feedback}\n---\n[{o_new.active_player}]: {o_new.player_input}"
         
@@ -130,7 +133,7 @@ with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui
                 o_new.system_dice_roll, 
                 logic, n, d, o_new)
 
-    visual_ui.load(run_init, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
+    visual_ui.load(init_ui, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
     btn.click(run_turn, inputs=[env_state, obs_state], outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, obs_state])
     reset_btn.click(run_init, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
 
