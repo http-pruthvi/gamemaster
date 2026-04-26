@@ -3,6 +3,8 @@ from openenv.core.env_server.http_server import create_app
 from server.gamemaster_env_environment import GamemasterEnvironment
 from models import GamemasterAction, GamemasterObservation
 
+from fastapi.responses import RedirectResponse
+
 # Create the standard OpenEnv App
 app = create_app(
     GamemasterEnvironment,
@@ -11,6 +13,10 @@ app = create_app(
     env_name="gamemaster_env",
     max_concurrent_envs=5,
 )
+
+@app.get("/", include_in_schema=False)
+async def root_redirect():
+    return RedirectResponse(url="/web")
 
 # --- CUSTOM VISUAL UI FOR HACKATHON ---
 def get_html_state(obs, env_level, monster_name):
