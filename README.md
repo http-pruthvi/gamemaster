@@ -7,7 +7,7 @@ sdk: docker
 pinned: false
 ---
 
-# 🎲 AI Gamemaster - OpenEnv RL Environment
+# 🎲 AI Gamemaster - OpenEnv RL Environment (v1.1)
 
 **A Self-Improving AI Gamemaster that learns strict rule enforcement alongside narrative storytelling, built on Meta's OpenEnv.**
 
