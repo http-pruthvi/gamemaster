@@ -14,7 +14,7 @@ api_app = create_app(
     max_concurrent_envs=5,
 )
 
-# 2. Visual Dashboard
+# 2. Visual Dashboard UI
 def get_html_state(obs, env_level, monster_name):
     player_pct = (obs.player_hp / 20) * 100
     monster_max = 10 + (env_level * 5)
@@ -35,7 +35,7 @@ def get_html_state(obs, env_level, monster_name):
     </div>
     """
 
-with gr.Blocks() as visual_ui:
+with gr.Blocks(title="AI Gamemaster") as visual_ui:
     gr.Markdown("# 🎲 AI Gamemaster RL Dashboard")
     obs_state = gr.State()
     env_state = gr.State()
@@ -43,30 +43,43 @@ with gr.Blocks() as visual_ui:
     with gr.Row():
         with gr.Column(scale=2):
             status_html = gr.HTML()
-            game_log = gr.Textbox(label="Game History", lines=10)
+            game_log = gr.Textbox(label="Battle History", lines=10)
         with gr.Column(scale=1):
-            player_in = gr.Textbox(label="Player Action")
-            roll_lab = gr.Label(label="Dice Roll")
+            player_in = gr.Textbox(label="Simulated Player Action")
+            roll_lab = gr.Label(label="Engine Dice Roll")
             
     with gr.Row():
-        narr = gr.Textbox(label="GM Response")
-        dmg_val = gr.Number(label="Damage", value=0)
+        narr = gr.Textbox(label="Your GM Narrative Response")
+        dmg_val = gr.Number(label="Damage to Apply", value=0)
         btn = gr.Button("Execute Turn", variant="primary")
 
     def run_init():
         e = GamemasterEnvironment()
         o = e.reset()
-        return get_html_state(o, e.dungeon_level, e.current_monster), f"Started! {o.player_input}", o.player_input, o.system_dice_roll, e, o
+        return get_html_state(o, e.dungeon_level, e.current_monster), f"Adventure Started! A {e.current_monster} appears.", o.player_input, o.system_dice_roll, e, o
 
     def run_turn(e, o, n, d):
         a = GamemasterAction(narrative_response=n, damage_amount=d, target_to_damage=e.current_monster)
         o_new = e.step(a)
-        return get_html_state(o_new, e.dungeon_level, e.current_monster), f"GM: {n}\nEngine: {o_new.engine_feedback}", o_new.player_input, o_new.system_dice_roll, o_new
+        return get_html_state(o_new, e.dungeon_level, e.current_monster), f"GM: {n}\nEngine Result: {o_new.engine_feedback}", o_new.player_input, o_new.system_dice_roll, o_new
 
     visual_ui.load(run_init, outputs=[status_html, game_log, player_in, roll_lab, env_state, obs_state])
     btn.click(run_turn, inputs=[env_state, obs_state, narr, dmg_val], outputs=[status_html, game_log, player_in, roll_lab, obs_state])
 
-# 3. Mount Together
+# 3. FastAPI Server with Redirects
 app = FastAPI()
+
+# Mount the OpenEnv API
 app.mount("/api", api_app)
+
+# Support /web for backward compatibility with OpenEnv CLI/HF defaults
+@app.get("/web", include_in_schema=False)
+async def web_redirect():
+    return RedirectResponse(url="/")
+
+# Mount Gradio at the Root
 app = gr.mount_gradio_app(app, visual_ui, path="/")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=7860)
