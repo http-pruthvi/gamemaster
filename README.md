@@ -38,6 +38,29 @@ We tracked Rule Accuracy (60%), Dungeon Progression (20%), and Narrative Quality
 
 ---
 
+## 📜 The Rulebook: "Infinite Dungeon" Mechanics
+To succeed, the AI Gamemaster must adhere to these strict environmental constraints:
+
+### 1. Combat & The D20 System
+- **The Roll:** Every turn, the engine generates a `system_dice_roll` (1-20).
+- **Hit Condition (>= 10):** The GM **must** apply damage (`damage_amount > 0`) to the current monster.
+- **Miss Condition (< 10):** The GM **must not** apply damage (`damage_amount = 0`).
+- **Reward:** +1.0 for accuracy, -1.0 for hallucinations (applying damage on a miss or ignoring a hit).
+
+### 2. Monster & Level Progression
+- **Monster Scaling:** Monsters get stronger as you go deeper. Monster HP = `10 + (Dungeon Level * 5)`.
+- **Counter-Attacks:** Monsters have a 50% chance to strike back each turn. Counter-damage = `random(1, 3) + Dungeon Level`.
+- **Advancing:** The player can only "Move Deeper" once the monster's HP is 0. The GM is rewarded for correctly triggering the level transition.
+
+### 3. Narrative Grounding
+- The GM receives a **+0.5 bonus** if their `narrative_response` mentions the correct monster name and accurately describes the result of the dice roll (e.g., describing a "miss" when the roll was a 4).
+
+### 4. Death & Persistence
+- **Player Death:** The game ends if the Player HP drops to 0. 
+- **The Goal:** Train the GM to keep the player alive through fair rule enforcement while maintaining a challenging narrative.
+
+---
+
 ## 🛠️ How to Play Visually
 Visit the **[Visual Dashboard](https://huggingface.co/spaces/Pruthvi1762/gamemaster_env)**.
 The homepage now renders a **Gradio Interactive UI** where you can manually test the engine.

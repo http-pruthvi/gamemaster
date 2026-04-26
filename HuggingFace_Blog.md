@@ -16,10 +16,11 @@ Using Meta's **OpenEnv** framework, I developed a Micro-RPG engine that acts as 
 - **The Action:** The AI must output a JSON object containing both the `narrative_response` and programmatic `state_updates` (e.g., `damage_amount`).
 
 ### The Reward Logic (The Heart of Self-Improvement)
-The secret to the agent's improvement is a strict reward rubric:
-- **+1.0** for correctly applying damage on a successful roll.
-- **-1.0** for applying damage on a miss (Hallucination).
-- **-2.0** for failing to follow the JSON schema (Formatting).
+The secret to the agent's improvement is a strict reward rubric based on "Infinite Dungeon" mechanics:
+- **Combat Rules:** The AI must match its actions to a D20 roll. +1.0 for applying damage on a hit (>=10), and -1.0 for hallucinations (applying damage on a miss).
+- **Monster Scaling:** Monsters get stronger as the dungeon level increases (HP = 10 + Level*5).
+- **Progression:** The AI is rewarded for correctly advancing the dungeon level only after the monster is defeated.
+- **Narrative Bonus:** +0.5 if the narrative accurately describes the dice roll and names the correct monster.
 
 ## Training for Mastery with Unsloth & GRPO
 To move beyond a baseline model, I used **Unsloth** and **TRL's GRPO (Group Relative Policy Optimization)**. GRPO is particularly powerful here because it allows the model to sample multiple "narrative/action" pairs and learn which ones better satisfy the rules of the game engine without needing a separate reward model.
