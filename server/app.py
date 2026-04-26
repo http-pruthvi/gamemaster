@@ -38,7 +38,7 @@ except Exception as e:  # pragma: no cover
 try:
     from ..models import GamemasterAction, GamemasterObservation
     from .gamemaster_env_environment import GamemasterEnvironment
-except ModuleNotFoundError:
+except (ModuleNotFoundError, ImportError):
     from models import GamemasterAction, GamemasterObservation
     from server.gamemaster_env_environment import GamemasterEnvironment
 

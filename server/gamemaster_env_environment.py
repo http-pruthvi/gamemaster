@@ -6,7 +6,7 @@ from openenv.core.env_server.types import State
 
 try:
     from ..models import GamemasterAction, GamemasterObservation
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     from models import GamemasterAction, GamemasterObservation
 
 

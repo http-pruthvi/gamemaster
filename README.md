@@ -1,3 +1,12 @@
+---
+title: Gamemaster Env
+emoji: 🎲
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # 🎲 AI Gamemaster - OpenEnv RL Environment
 
 **A Self-Improving AI Gamemaster that learns strict rule enforcement alongside narrative storytelling, built on Meta's OpenEnv.**
