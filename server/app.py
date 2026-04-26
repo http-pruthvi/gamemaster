@@ -84,7 +84,7 @@ with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui
             btn = gr.Button("Execute AI Turn", variant="primary")
             reset_btn = gr.Button("Reset Dungeon")
 
-    def run_init():
+    def init_ui():
         e = GamemasterEnvironment()
         o = e.reset()
         return (get_html_state(o, e.dungeon_level), 
@@ -96,8 +96,8 @@ with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui
                 0, e, o)
 
     def run_turn(e, o):
-        if o.done:
-            return run_init()
+        if o is None or o.done:
+            return init_ui()
 
         # 1. "AI Decision Logic"
         is_hit = o.system_dice_roll >= 10
@@ -143,9 +143,9 @@ with gr.Blocks(title="AI Gamemaster", theme=gr.themes.Monochrome()) as visual_ui
                 o_new.system_dice_roll, 
                 logic, n, d, o_new)
 
-    visual_ui.load(run_init, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
+    visual_ui.load(init_ui, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
     btn.click(run_turn, inputs=[env_state, obs_state], outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, obs_state])
-    reset_btn.click(run_init, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
+    reset_btn.click(init_ui, outputs=[status_html, game_log, player_in, roll_lab, gm_log_out, narr_out, dmg_val, env_state, obs_state])
 
 # 3. Server
 app = FastAPI()
