@@ -14,6 +14,20 @@ pinned: false
 
 > **Hackathon Theme Alignment:** Theme #4 (Self-Improvement) & Theme #3 (World Modeling)
 
+## 🔗 Quick Links (Non-Negotiable)
+- **Environment (HF Space):** [https://huggingface.co/spaces/Pruthvi1762/gamemaster_env](https://huggingface.co/spaces/Pruthvi1762/gamemaster_env)
+- **Visual Web UI (Demo):** [https://huggingface.co/spaces/Pruthvi1762/gamemaster_env/web](https://huggingface.co/spaces/Pruthvi1762/gamemaster_env/web)
+- **Training Script (Google Colab):** [Open in Colab](https://colab.research.google.com/github/http-pruthvi/gamemaster/blob/main/gamemaster_env/train_unsloth_grpo.ipynb)
+- **Technical Writeup (Blog):** [Read on Hugging Face](./HuggingFace_Blog.md)
+- **GitHub Repository:** [https://github.com/http-pruthvi/gamemaster](https://github.com/http-pruthvi/gamemaster)
+
+## ✅ Submission Checklist (Judges' Guide)
+- [x] **Built on OpenEnv:** Uses `openenv-core` 0.2.3 and standard `Environment`/`Action`/`Observation` base classes.
+- [x] **Working Training Script:** Provided via Unsloth/TRL in Colab.
+- [x] **Evidence of Training:** Multi-dimensional rewards (Rule Accuracy, Narrative, Progression) tracked via WandB.
+- [x] **Hosted Environment:** Live on HF Spaces with Docker runtime.
+- [x] **Experimental Tracking:** WandB integration enabled in `GRPOConfig`.
+
 ## 📖 The Problem: The Hallucinating Gamemaster
 Large Language Models excel at creative writing and storytelling, making them seemingly perfect candidates for AI Gamemasters (e.g., Dungeons & Dragons). However, they critically fail at **persistent world modeling and rule enforcement**. 
 
@@ -26,15 +40,15 @@ When deployed as a GM, a baseline LLM will frequently:
 ## 🌍 The Environment
 This OpenEnv environment simulates a deterministic Micro-RPG game engine. The LLM acts as the Gamemaster. 
 
-* **The Engine (Server):** Tracks the *actual, unhallucinated truth* (Player HP, Goblin HP, Inventory, and D20 dice rolls).
+* **The Engine (Server):** Tracks the *actual, unhallucinated truth* (Player HP, Monster HP, Inventory, and D20 dice rolls).
 * **Observation (What the AI sees):** The player's chat input (e.g., *"I attack the goblin!"*) and the system's objective D20 roll (e.g., *14*).
 * **Action (What the AI does):** The AI must output a JSON action containing the `narrative_response` AND strict programmatic state changes (`damage_amount`, `item_to_give`, `target_to_damage`).
 
 ### The Reward Rubric (Self-Improvement Mechanism)
-The environment programmatically scores the LLM's actions:
-* **Rule Adherence (+1.0):** If the engine rolled a 15, and the player attacked, did the AI correctly populate the `damage_amount` field targeting the "goblin"? 
-* **Hallucination Penalty (-1.0):** Did the AI try to apply damage when the roll was a 3? Did it give loot before the goblin was dead?
-* **Formatting Penalty (-2.0):** Did the AI fail to return a parseable JSON tool call?
+The environment programmatically scores the LLM's actions across three dimensions:
+* **Rule Accuracy (60% weight):** Correct mapping of dice rolls (>=10 = Hit) to damage state updates.
+* **Dungeon Progression (20% weight):** Advancing levels and spawning monsters correctly.
+* **Narrative Grounding (20% weight):** Ensuring the story mentions the correct monster and state.
 
 Through **GRPO (Group Relative Policy Optimization)** via Unsloth, the agent undergoes **Self-Improvement**. It starts by randomly guessing JSON structures and hallucinating rules. Over thousands of interactions with the `GamemasterEnv`, it learns an adaptive policy: dynamically adjusting its programmatic output to perfectly match the stochastic dice rolls of the environment, driving its own capability growth.
 
@@ -54,7 +68,7 @@ Install the dependencies and start the FastAPI server:
 ```bash
 pip install openenv-core
 cd server
-uvicorn app:app --port 8000
+uvicorn app:app --port 7860
 ```
 
 ### 2. Run the GM locally with Ollama
